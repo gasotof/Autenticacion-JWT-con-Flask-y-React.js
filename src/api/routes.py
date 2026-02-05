@@ -5,6 +5,8 @@ from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import create_access_token
 
 api = Blueprint('api', __name__)
 
@@ -20,3 +22,62 @@ def handle_hello():
     }
 
     return jsonify(response_body), 200
+
+
+@api.route('/signup', methods=['POST'])
+def signup():
+    body = request.get_json()
+
+    if body is None:
+        return jsonify({"msg": "Missing JSON body"}), 400
+
+    email = body.get("email")
+    password = body.get("password")
+
+    if not email or not password:
+        return jsonify({"msg": "Email and password are required"}), 400
+
+    user_exists = User.query.filter_by(email=email).first()
+    if user_exists:
+        return jsonify({"msg": "User already exists"}), 409
+
+    hashed_password = generate_password_hash(password)
+
+    new_user = User(
+        email=email,
+        password=hashed_password,
+        is_active=True
+    )
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"msg": "User created successfully"}), 201
+
+
+@api.route('/login', methods=['POST'])
+def login():
+    body = request.get_json()
+
+    if body is None:
+        return jsonify({"msg": "Missing JSON body"}), 400
+
+    email = body.get("email")
+    password = body.get("password")
+
+    if not email or not password:
+        return jsonify({"msg": "Email and password are required"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        return jsonify({"msg": "Invalid email or password"}), 401
+
+    if not check_password_hash(user.password, password):
+        return jsonify({"msg": "Invalid email or password"}), 401
+
+    access_token = create_access_token(identity=user.id)
+
+    return jsonify({
+        "access_token": access_token,
+        "user": user.serialize()
+    }), 200
